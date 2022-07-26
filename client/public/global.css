@@ -1,0 +1,30 @@
+:root {
+    --sidebar-color:  #152a3e;
+    --content-background: var(--sidebar-color);
+
+    --top-bar-color: #203442;
+    --active-color: #10222f;
+    --hover-color: #2b4457;
+    --alt-color: #1f4964;
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, .2), 0 4px 6px -2px rgba(0, 0, 0, .1);
+    --shadow-lrg: 10px 10px 15px -3px rgba(0, 0, 0, .2), 0 4px 6px -2px rgba(0, 0, 0, .1);
+}
+  
+
+@import "https://fonts.googleapis.com/css?family=Poppins:300,400,500,600,700";
+
+@import "https://fonts.googleapis.com/css2?family=Montserrat:wght@300&display=swap";
+
+body {
+    font-family: 'Montserrat', sans-serif;
+    background: var(--content-background);
+    width: 100%;
+    color:white;
+    transition: all 0.3s;
+}
+
+.btn-thicc {
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: .500rem .500rem;
+}
