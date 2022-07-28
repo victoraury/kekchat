@@ -1,42 +1,230 @@
 
 use std::{
     collections::HashMap,
-    env,
-    io::Error as IoError,
+    collections::HashSet,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
 use futures_channel::mpsc::{unbounded, UnboundedSender, UnboundedReceiver};
 use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
 
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 
-type Tx = UnboundedSender<Message>;
-type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
+enum Ops {
+    NewMessage = 1,
+    SetUsernameResponse = 2,
+    UserConnected = 3,
+    UserDisconnected = 4,
+    UserList = 5
+}
 
+#[derive(Deserialize)]
+struct SetUsernameMessage {
+    username: String
+}
+#[derive(Serialize)]
+struct SetUsernameResponse {
+    op: u8,
+    ok: bool
+}
+#[derive(Deserialize)]
+struct ContentMessage {
+    message: String
+}
+#[derive(Serialize)]
+struct ContentMessageWithName {
+    op: u8,
+    message: String,
+    from: String
+}
+#[derive(Serialize)]
+struct Userlist {
+    op: u8,
+    users: Vec<String>
+}
 
+#[derive(Serialize)]
+struct UserDisCo {
+    op: u8,
+    user: String
+}
 
-type ConnTable = Arc<Mutex<HashMap< SocketAddr, UnboundedSender<Message> >>>;
 type WsConn = tokio_tungstenite::WebSocketStream<TcpStream>;
+type ConnTable = Arc<Mutex<HashMap< SocketAddr, UnboundedSender<Message> >>>;
+type UserSet = Arc<Mutex<HashSet<String>>>;
 
-async fn handle_connection(_conn: WsConn, _conn_table: ConnTable) {
-    println!("spawned thread");
+fn send_to_all(peer_table: ConnTable, message: Message, own_address: &SocketAddr) {
+    let table = peer_table.lock().unwrap();
+
+    for recipient in table.iter().filter( |(peer_addr, _)| **peer_addr != *own_address ).map( |(_, sender)| sender ) {
+        recipient.unbounded_send(message.clone()).unwrap();
+    }
+}
+
+fn send_to_self(peer_table: ConnTable, message: Message, own_address: &SocketAddr) {
+    peer_table
+        .lock()
+        .unwrap()
+        .get(own_address)
+        .unwrap()
+        .unbounded_send(message)
+        .unwrap();
+}
+
+async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, peer_table: ConnTable, user_set: UserSet) {
+
+    // cria um canal para comunicação com esta thread
+    let (tx, rx): (UnboundedSender<Message>, UnboundedReceiver<Message>) = unbounded();
+
+    // insere o canal desta thread na tabela
+    peer_table.lock().unwrap().insert(address, tx);
+
+    let mut username = "".to_string();
+    let (outgoing, incoming) = connection.split();
+
+    // declara um listener que espera por mensagens e as propaga para as outras threads
+    let incoming_messages = incoming.try_for_each( |msg| {
+
+        // se a mesnsagem não for texto, ignora
+        if !msg.is_text() {
+            return future::ok(());
+        }
+        println!("Received message! - {:?}", msg);
+
+        
+        let payload = msg.clone().into_text().unwrap();
+
+        // se o usuário ainda não tiver escolhido um nome
+        // seta o nome (se ele mandar a mensagem certa)
+        if username.is_empty() {
+            let set_user: Result<SetUsernameMessage> = serde_json::from_str(&payload);
+
+            if let Ok(user) = set_user {
+                let mut users = user_set.lock().unwrap();
+
+                if users.contains(&user.username) {
+                    send_to_self(peer_table.clone(), Message::text(
+                        serde_json::to_string(
+                            &SetUsernameResponse{
+                                op: (Ops::SetUsernameResponse as u8),
+                                ok: false
+                        }).unwrap()),
+                        &address
+                    );
+                }
+                else{
+                    username = user.username;
+                    users.insert(username.clone());
+                    // envia pro cliente uma mensagem sinalizando que o set de username foi OK
+                    send_to_self(peer_table.clone(), Message::text(
+                        serde_json::to_string(
+                            &SetUsernameResponse{
+                                op: (Ops::SetUsernameResponse as u8),
+                                ok: true
+                            }
+                        ).unwrap()),
+                        &address
+                    );
+                    
+                    // envia pro cliente a lista de usuários conectados
+                    send_to_self(peer_table.clone(), Message::text(
+                        serde_json::to_string(
+                            &Userlist{
+                                op: (Ops::UserList as u8),
+                                users: (&users).iter().filter(|usr| **usr != username).cloned().collect()
+                            }
+                        ).unwrap()),
+                        &address
+                    );
+                    
+                    // envia o username do cliente para os outros users
+                    send_to_all(
+                        peer_table.clone(),
+                        Message::text(
+                            serde_json::to_string(
+                                &UserDisCo {
+                                    op: (Ops::UserConnected as u8),
+                                    user: username.clone()
+                                }
+                            )
+                            .unwrap()
+                        ),
+                        &address
+                    );
+                }
+            }
+            return future::ok(());
+        }
+        // verifica se o formato da mensagem está certo antes de propagar para os outros users
+        let check_content: Result<ContentMessage> = serde_json::from_str(&payload);
+
+        // se não estiver no formato, ignora a mensagem
+        if check_content.is_err() {
+            return future::ok(());
+        }
+        
+        // propaga a mensagem recebida para os outros clientes
+        send_to_all(peer_table.clone(),
+            Message::from(
+                serde_json::to_string(&{
+                    &ContentMessageWithName{
+                        op: (Ops::NewMessage as u8),
+                        from: username.clone(),
+                        message: check_content.unwrap().message
+                    }
+                }).unwrap()
+            ),
+            &address
+        );
+        
+        future::ok(())
+    });
+
+    // declara um listener que aguarda por mensagens enviadas no canal desta thread e as envia para o usuário
+    let channel_listener = rx.map(Ok).forward(outgoing);
+
+    // alterna entre receber mensagens do usuário e receber mensagens das outras threads
+    pin_mut!(incoming_messages, channel_listener);
+    future::select(incoming_messages, channel_listener).await;
+
+    // quando a conexão for fechada, remove o canal da tabela e nome do usuário
+    // também notifica os outros usuários da desconexão
+    peer_table.lock().unwrap().remove(&address);
+    if !username.is_empty() {
+        user_set.lock().unwrap().remove(&username);
+        send_to_all(peer_table.clone(), Message::from(
+            serde_json::to_string(
+                &UserDisCo {
+                    op: (Ops::UserDisconnected as u8),
+                    user: username.clone()
+                }
+            ).unwrap()),
+            &address
+        );
+    }
+
+    println!("Connection closed! = {}", address);
 }
 
 #[tokio::main]
-async fn main() -> Result<(), IoError >{
+async fn main() -> Result<()>{
 
     // endereço para aguardar novas conexões
-    let HOST = "127.0.0.1:8080";
+    let host = "10.10.98.117:8021";
     
     // cria um listener TCP na porta especificada
-    let listener = TcpListener::bind(HOST).await.expect("Failed to start server") ;
-    println!("Server listening on {}", HOST);
+    let listener = TcpListener::bind(host).await.expect("Failed to start server") ;
+    println!("Server listening on {}", host);
 
     // define a tabela de streams websocket dos usuários
     let conn_map: ConnTable = Arc::new(Mutex::new(HashMap::new()));
+
+    // conjunto de nomes dos usuários do chat
+    let user_set: UserSet = Arc::new(Mutex::new(HashSet::new()));
 
     loop {
 
@@ -55,37 +243,9 @@ async fn main() -> Result<(), IoError >{
             },
             Ok(connection) => {
 
-                // cria um canal para comunicação para a thread responsável por gerencial a conexão do cliente
-                let (tx, rx): (UnboundedSender<Message>, UnboundedReceiver<Message>) = unbounded();
-                
-                // insere a conexão na tabela
-                conn_map.lock().unwrap().insert(addr, tx);
-
-                // cria uma referencia da tabela para a thread
-                let peer_table = conn_map.clone();
-                
                 // spawna uma thread para gerenciar a conexão websocket
-                std::thread::spawn(move || {
-                    let (outgoing, incoming) = connection.split();
+                tokio::spawn(handle_connection(addr, connection, conn_map.clone(), user_set.clone()));
 
-                    let incoming_message = incoming.try_for_each( |msg| {
-
-                        let _: Vec<_> = peer_table
-                            .lock()
-                            .unwrap()
-                            .iter()
-                            .filter( |(peer_addr, _)| **peer_addr != addr)
-                            .map( |(_, sender)| {
-                                sender.unbounded_send(msg.clone()).unwrap();
-                            })
-                            .collect()
-                        ;
-                    
-                        future::ok(())
-                    });
-                });
-
-                println!("{:?}", conn_map);
                 println!("Established websocket connection @ {:}", addr);
             }
         }

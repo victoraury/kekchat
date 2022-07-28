@@ -5,10 +5,9 @@
   "scripts": {
     "c-build": "rollup -c",
     "c-dev": "rollup -c ./rollup.config.js -w",
-    "c-start": "sirv client/public --no-clear",
+    "c-start": "sirv client/public --no-clear --host",
     "c-validate": "svelte-check --tsconfig ./client/tsconfig.json",
 
-    "s-build": "cargo build --release --manifest-path server/Cargo.toml",
     "s-run": "cargo run --release --manifest-path server/Cargo.toml"
   },
   "devDependencies": {
