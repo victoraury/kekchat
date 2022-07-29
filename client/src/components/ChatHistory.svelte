@@ -1,6 +1,6 @@
 <script>
     import ChatMessage from "./ChatMessage.svelte";
-    import { messages } from '../stores';
+    import { messages, users } from '../stores';
     import { afterUpdate } from 'svelte';
     import { MESSAGE_COLORS } from '../const';
 
@@ -19,8 +19,8 @@
 
 <div class="chat-history" bind:this={chatElement}>
     <ul class="m-b-0">
-        {#each $messages as msg, i}
-            <ChatMessage {msg} color={MESSAGE_COLORS[i % MESSAGE_COLORS.length]}/>
+        {#each $messages as msg}
+            <ChatMessage {msg} color={MESSAGE_COLORS[$users.indexOf(msg.from) % MESSAGE_COLORS.length]}/>
         {/each}                      
     </ul>
 </div>

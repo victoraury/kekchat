@@ -7,8 +7,8 @@
     "c-dev": "rollup -c ./rollup.config.js -w",
     "c-start": "sirv client/public --no-clear --host",
     "c-validate": "svelte-check --tsconfig ./client/tsconfig.json",
-
-    "s-run": "cargo run --release --manifest-path server/Cargo.toml"
+    "s-run": "cargo run --release --manifest-path server/Cargo.toml",
+    "set-ip": "node ./util/ipTool.js"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^21.0.1",
@@ -29,7 +29,6 @@
     "typescript": "^4.0.0"
   },
   "dependencies": {
-    "bootstrap": "^5.1.3",
     "sirv-cli": "^2.0.2",
     "unidecode": "^0.1.8",
     "yarn": "^1.22.18"

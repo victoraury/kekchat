@@ -7,19 +7,19 @@
 
     var usersFilter = '';
     function handleMessageKeyUp(key) {
-        if (key.code == 'Enter' && key.target !== null) {
+        if (key.which !== 13 || key.target === null || key.target.value == '')
+            return;
 
-            if (socket.readyState === socket.OPEN) {
-                sendMessage({
-                    message: key.target.value
-                });
+        if (socket.readyState === socket.OPEN) {
+            sendMessage({
+                message: key.target.value
+            });
 
-                $messages = [...$messages, {
-                    message: key.target.value
-                }];
+            $messages = [...$messages, {
+                message: key.target.value
+            }];
 
-                key.target.value = '';
-            }
+            key.target.value = '';
         }
     }
 </script>
