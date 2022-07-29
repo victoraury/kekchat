@@ -98,65 +98,72 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
         
         let payload = msg.clone().into_text().unwrap();
 
-        // se o usuário ainda não tiver escolhido um nome
-        // seta o nome (se ele mandar a mensagem certa)
+        // se o usuário ainda não tiver escolhido um username
+        // seta o username (se tudo ocorrer bem)
         if username.is_empty() {
             let set_user: Result<SetUsernameMessage> = serde_json::from_str(&payload);
 
-            if let Ok(user) = set_user {
-                let mut users = user_set.lock().unwrap();
+            // se a mensagem estiver com formato incorreto, ignora
+            let user = match set_user {
+                Ok(user_message) => user_message,
+                Err(_) => return future::ok(())
+            };
 
-                if users.contains(&user.username) {
-                    send_to_self(peer_table.clone(), Message::text(
-                        serde_json::to_string(
-                            &SetUsernameResponse{
-                                op: (Ops::SetUsernameResponse as u8),
-                                ok: false
-                        }).unwrap()),
-                        &address
-                    );
-                }
-                else{
-                    username = user.username;
-                    users.insert(username.clone());
-                    // envia pro cliente uma mensagem sinalizando que o set de username foi OK
-                    send_to_self(peer_table.clone(), Message::text(
-                        serde_json::to_string(
-                            &SetUsernameResponse{
-                                op: (Ops::SetUsernameResponse as u8),
-                                ok: true
-                            }
-                        ).unwrap()),
-                        &address
-                    );
-                    
-                    // envia pro cliente a lista de usuários conectados
-                    send_to_self(peer_table.clone(), Message::text(
-                        serde_json::to_string(
-                            &Userlist{
-                                op: (Ops::UserList as u8),
-                                users: (&users).iter().filter(|usr| **usr != username).cloned().collect()
-                            }
-                        ).unwrap()),
-                        &address
-                    );
-                    
-                    // envia o username do cliente para os outros users
-                    send_to_all(
-                        peer_table.clone(),
-                        Message::text(
-                            serde_json::to_string(
-                                &UserDisCo {
-                                    op: (Ops::UserConnected as u8),
-                                    user: username.clone()
-                                }
-                            )
-                            .unwrap()
-                        ),
-                        &address
-                    );
-                }
+            let mut users = user_set.lock().unwrap();
+            // se a mensagem estiver formatada corretamente, mas o username já estiver em uso
+            // notifica para o usuário escolher outro nome
+            if users.contains(&user.username) {
+                send_to_self(peer_table.clone(), Message::text(
+                    serde_json::to_string(
+                        &SetUsernameResponse{
+                            op: (Ops::SetUsernameResponse as u8),
+                            ok: false
+                    }).unwrap()),
+                    &address
+                );
+                return future::ok(());
             }
+
+            // registra na tabela o username deste usuário
+            username = user.username;
+            users.insert(username.clone());
+
+            // envia pro cliente uma mensagem sinalizando que o set de username foi OK
+            send_to_self(peer_table.clone(), Message::text(
+                serde_json::to_string(
+                    &SetUsernameResponse{
+                        op: (Ops::SetUsernameResponse as u8),
+                        ok: true
+                    }
+                ).unwrap()),
+                &address
+            );
+            
+            // envia pro cliente a lista de usuários conectados
+            send_to_self(peer_table.clone(), Message::text(
+                serde_json::to_string(
+                    &Userlist{
+                        op: (Ops::UserList as u8),
+                        users: (&users).iter().filter(|usr| **usr != username).cloned().collect()
+                    }
+                ).unwrap()),
+                &address
+            );
+            
+            // envia o username do cliente para os outros users
+            send_to_all(
+                peer_table.clone(),
+                Message::text(
+                    serde_json::to_string(
+                        &UserDisCo {
+                            op: (Ops::UserConnected as u8),
+                            user: username.clone()
+                        }
+                    )
+                    .unwrap()
+                ),
+                &address
+            );
             return future::ok(());
         }
         // verifica se o formato da mensagem está certo antes de propagar para os outros users
@@ -214,7 +221,7 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
 async fn main() -> Result<()>{
 
     // endereço para aguardar novas conexões
-    let host = "10.10.98.117:8021";
+    let host = "localhost:8021";
     
     // cria um listener TCP na porta especificada
     let listener = TcpListener::bind(host).await.expect("Failed to start server") ;
