@@ -2,6 +2,8 @@
     --sidebar-color:  #152a3e;
     --content-background: var(--sidebar-color);
 
+    --kekw-orange: #be664a;
+    --kekw-orange-hover: #dd5931;
     --top-bar-color: #203442;
     --active-color: #10222f;
     --hover-color: #2b4457;
@@ -12,15 +14,19 @@
   
 
 @import "https://fonts.googleapis.com/css?family=Poppins:300,400,500,600,700";
-
 @import "https://fonts.googleapis.com/css2?family=Montserrat:wght@300&display=swap";
 
+html,
 body {
-    font-family: 'Montserrat', sans-serif;
-    background: var(--content-background);
+    height: 100%;
     width: 100%;
-    color:white;
+}
+
+body {
+    font-family: 'Consolas', monospace;
+    background-color: rgba(33, 33, 33, 0.95);
     transition: all 0.3s;
+    padding-top: 20px;
 }
 
 .btn-thicc {

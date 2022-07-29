@@ -1,44 +1,20 @@
-<script lang="ts">
+<script>
 	import { onMount } from 'svelte';
-	import Username from './components/Username.svelte';
-	import Chat from './components/Chat.svelte'
+	import Chat from './components/Chat.svelte';
+	import LogIn from './components/Login.svelte';
+	import { HOST } from './const';
+
+	import { isLoggedIn } from './stores.js';
+	import { startWebsocket } from './websocket';
 	
-	let socket = new WebSocket("ws://localhost");
-
-	socket.onopen = function(this: WebSocket, ev: Event) {
-		console.log("[WebSocket]: Connected!");
-		socket.send("Yo!");
-	}
-
-	socket.onmessage = (ev: MessageEvent) => {
-		console.log("Received message", ev.data);
-	}
-
-	socket.onclose = (ev: CloseEvent) => {
-		console.log("[WebSocket]: Connection closed");
-	}
-
-	socket.onerror = (ev: Event) => {
-		console.log(ev);
-	}
+	onMount(() => {
+		startWebsocket(HOST);
+	});
 
 </script>
 
-<main>
-	<!-- <Username/> -->
+{#if $isLoggedIn}
 	<Chat/>
-</main>
-<footer>
-	
-</footer>
-
-
-<style>
-	main {
-		display: grid;
-		/* flex-direction: column; */
-		width: 100%;
-		min-height: 100vh;
-		place-items: center;
-	}
-</style>
+{:else}
+	<LogIn/>
+{/if}
