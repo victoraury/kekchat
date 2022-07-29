@@ -4,6 +4,8 @@ use std::{
     collections::HashSet,
     net::SocketAddr,
     sync::{Arc, Mutex},
+    fs,
+    env
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,11 @@ enum Ops {
     UserConnected = 3,
     UserDisconnected = 4,
     UserList = 5
+}
+
+#[derive(Deserialize)]
+struct HostConfig {
+    ip: String
 }
 
 #[derive(Deserialize)]
@@ -217,15 +224,26 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
     println!("Connection closed! = {}", address);
 }
 
+fn get_local_ip() -> std::string::String {
+    let dir = env::current_dir().unwrap();
+
+    let ip_file = fs::read_to_string(format!("{}{}", dir.display(), "/util/ip.json"))
+                        .expect("couldnt read file");
+                        
+    let host_config : Result<HostConfig> = serde_json::from_str(&ip_file);
+
+    return host_config.unwrap().ip;
+}
+
 #[tokio::main]
 async fn main() -> Result<()>{
-
     // endereço para aguardar novas conexões
-    let host = "localhost:8021";
+    let local_ip = get_local_ip();
+    let host = format!("{}:8021", local_ip);
     
     // cria um listener TCP na porta especificada
-    let listener = TcpListener::bind(host).await.expect("Failed to start server") ;
-    println!("Server listening on {}", host);
+    let listener = TcpListener::bind(host.clone()).await.expect("Failed to start server") ;
+    println!("Server listening on {}", host.clone());
 
     // define a tabela de streams websocket dos usuários
     let conn_map: ConnTable = Arc::new(Mutex::new(HashMap::new()));
