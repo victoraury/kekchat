@@ -87,9 +87,6 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
     // cria um canal para comunicação com esta thread
     let (tx, rx): (UnboundedSender<Message>, UnboundedReceiver<Message>) = unbounded();
 
-    // insere o canal desta thread na tabela
-    peer_table.lock().unwrap().insert(address, tx);
-
     let mut username = "".to_string();
     let (outgoing, incoming) = connection.split();
 
@@ -130,6 +127,9 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
                 );
                 return future::ok(());
             }
+
+            // insere o canal desta thread na tabela
+            peer_table.lock().unwrap().insert(address, tx.clone());
 
             // registra na tabela o username deste usuário
             username = user.username;
@@ -207,9 +207,11 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
 
     // quando a conexão for fechada, remove o canal da tabela e nome do usuário
     // também notifica os outros usuários da desconexão
-    peer_table.lock().unwrap().remove(&address);
     if !username.is_empty() {
+
+        peer_table.lock().unwrap().remove(&address);
         user_set.lock().unwrap().remove(&username);
+
         send_to_all(peer_table.clone(), Message::from(
             serde_json::to_string(
                 &UserDisCo {
