@@ -232,7 +232,7 @@ fn get_local_ip() -> std::string::String {
                         
     let host_config : Result<HostConfig> = serde_json::from_str(&ip_file);
 
-    return host_config.unwrap().ip;
+    host_config.unwrap().ip
 }
 
 #[tokio::main]
