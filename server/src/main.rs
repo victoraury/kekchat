@@ -89,16 +89,17 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
 
     let mut username = "".to_string();
     let (outgoing, incoming) = connection.split();
-
+    
+    // insere o canal desta thread na tabela
+    peer_table.lock().unwrap().insert(address, tx);
+    
     // declara um listener que espera por mensagens e as propaga para as outras threads
     let incoming_messages = incoming.try_for_each( |msg| {
-
+        
         // se a mesnsagem não for texto, ignora
         if !msg.is_text() {
             return future::ok(());
         }
-        println!("Received message! - {:?}", msg);
-
         
         let payload = msg.clone().into_text().unwrap();
 
@@ -114,6 +115,7 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
             };
 
             let mut users = user_set.lock().unwrap();
+
             // se a mensagem estiver formatada corretamente, mas o username já estiver em uso
             // notifica para o usuário escolher outro nome
             if users.contains(&user.username) {
@@ -127,9 +129,6 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
                 );
                 return future::ok(());
             }
-
-            // insere o canal desta thread na tabela
-            peer_table.lock().unwrap().insert(address, tx.clone());
 
             // registra na tabela o username deste usuário
             username = user.username;
@@ -145,13 +144,13 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
                 ).unwrap()),
                 &address
             );
-            
+
             // envia pro cliente a lista de usuários conectados
             send_to_self(peer_table.clone(), Message::text(
                 serde_json::to_string(
                     &Userlist{
                         op: (Ops::UserList as u8),
-                        users: (&users).iter().filter(|usr| **usr != username).cloned().collect()
+                        users: (&users).iter().filter(|usr| **usr != *username).cloned().collect()
                     }
                 ).unwrap()),
                 &address
@@ -171,30 +170,30 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
                 ),
                 &address
             );
-            return future::ok(());
         }
-        // verifica se o formato da mensagem está certo antes de propagar para os outros users
-        let check_content: Result<ContentMessage> = serde_json::from_str(&payload);
-
-        // se não estiver no formato, ignora a mensagem
-        if check_content.is_err() {
-            return future::ok(());
+        else {
+            // verifica se o formato da mensagem está certo antes de propagar para os outros users
+            let check_content: Result<ContentMessage> = serde_json::from_str(&payload);
+    
+            // se não estiver no formato, ignora a mensagem
+            if check_content.is_err() {
+                return future::ok(());
+            }
+            
+            // propaga a mensagem recebida para os outros clientes
+            send_to_all(peer_table.clone(),
+                Message::from(
+                    serde_json::to_string(&{
+                        &ContentMessageWithName{
+                            op: (Ops::NewMessage as u8),
+                            from: username.clone(),
+                            message: check_content.unwrap().message
+                        }
+                    }).unwrap()
+                ),
+                &address
+            );
         }
-        
-        // propaga a mensagem recebida para os outros clientes
-        send_to_all(peer_table.clone(),
-            Message::from(
-                serde_json::to_string(&{
-                    &ContentMessageWithName{
-                        op: (Ops::NewMessage as u8),
-                        from: username.clone(),
-                        message: check_content.unwrap().message
-                    }
-                }).unwrap()
-            ),
-            &address
-        );
-        
         future::ok(())
     });
 
@@ -207,10 +206,11 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
 
     // quando a conexão for fechada, remove o canal da tabela e nome do usuário
     // também notifica os outros usuários da desconexão
+    peer_table.lock().unwrap().remove(&address);
+
     if !username.is_empty() {
 
-        peer_table.lock().unwrap().remove(&address);
-        user_set.lock().unwrap().remove(&username);
+        user_set.lock().unwrap().remove(&*username);
 
         send_to_all(peer_table.clone(), Message::from(
             serde_json::to_string(
