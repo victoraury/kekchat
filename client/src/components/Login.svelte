@@ -3,7 +3,18 @@
     import { username } from '../stores';
     import KekLogo from './KekLogo.svelte';
     import { loginAttemptStatus } from '../stores';
- 
+    import { onMount, onDestroy } from 'svelte';
+
+    const audio = new Audio('/assets/audio/kekw_welcome.mp3');
+    onMount(() => {
+        audio.play();
+    })
+
+    onDestroy(() => {
+        audio.pause()
+        audio.currentTime = 0;
+    });
+
     function sendUsernameMessage() {
         if ($username !== '') {
             
@@ -13,6 +24,10 @@
         sendMessage({ username: $username });
     }
 </script>
+
+<svelte:head>
+	<title>Login - KekChat</title>
+</svelte:head>
 
 <div class="container align-items-center d-flex h-100">
     <div class="row justify-content-center">

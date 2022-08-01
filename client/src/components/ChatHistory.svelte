@@ -3,17 +3,24 @@
     import { messages, users } from '../stores';
     import { afterUpdate } from 'svelte';
     import { MESSAGE_COLORS } from '../const';
-
+    
     let chatElement;
     afterUpdate(() => {
-		if($messages) scrollToBottom(chatElement);
+        if($messages) scrollToBottom(chatElement);
     });
     const scrollToBottom = async (node) => {
         node.scroll({ top: node.scrollHeight, behavior: 'smooth' });
     }
-
+    
+    
     $: if($messages && chatElement) {
-		scrollToBottom(chatElement);
+        scrollToBottom(chatElement);
+
+        const l = $messages.length;
+        if (l > 0 && ($messages[l-1].hasOwnProperty('from') !== false)) {
+            const audio = new Audio('/assets/audio/kekw_notification.mp3');
+            audio.play();
+        }
 	}
 </script>
 

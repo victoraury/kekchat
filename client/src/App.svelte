@@ -4,6 +4,7 @@
 	import LogIn from './components/Login.svelte';
 	import HOST from '../../util/ip.json';
 
+	
 	import { isLoggedIn } from './stores.js';
 	import { startWebsocket } from './websocket';
 	
