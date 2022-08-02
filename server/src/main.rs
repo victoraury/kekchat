@@ -61,25 +61,25 @@ struct UserDisCo {
 }
 
 type WsConn = tokio_tungstenite::WebSocketStream<TcpStream>;
-type ConnTable = Arc<Mutex<HashMap< SocketAddr, UnboundedSender<Message> >>>;
+type ConnTable = Arc<Mutex<HashMap< SocketAddr, (UnboundedSender<Message>, bool) >>>;
 type UserSet = Arc<Mutex<HashSet<String>>>;
 
 fn send_to_all(peer_table: ConnTable, message: Message, own_address: &SocketAddr) {
     let table = peer_table.lock().unwrap();
 
-    for recipient in table.iter().filter( |(peer_addr, _)| **peer_addr != *own_address ).map( |(_, sender)| sender ) {
-        recipient.unbounded_send(message.clone()).unwrap();
+    for (recipient, active) in table.iter().filter( |(peer_addr, _)| **peer_addr != *own_address ).map( |(_, sender)| sender ) {
+        if *active {
+            recipient.unbounded_send(message.clone()).unwrap();
+        }
     }
 }
 
 fn send_to_self(peer_table: ConnTable, message: Message, own_address: &SocketAddr) {
-    peer_table
-        .lock()
-        .unwrap()
-        .get(own_address)
-        .unwrap()
-        .unbounded_send(message)
-        .unwrap();
+    let peer_lock = peer_table.lock().unwrap();
+    
+    let (recipient, _) = peer_lock.get(own_address).unwrap();
+
+    recipient.unbounded_send(message).unwrap();
 }
 
 async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, peer_table: ConnTable, user_set: UserSet) {
@@ -91,7 +91,7 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
     let (outgoing, incoming) = connection.split();
     
     // insere o canal desta thread na tabela
-    peer_table.lock().unwrap().insert(address, tx);
+    peer_table.lock().unwrap().insert(address, (tx, false));
     
     // declara um listener que espera por mensagens e as propaga para as outras threads
     let incoming_messages = incoming.try_for_each( |msg| {
@@ -133,6 +133,12 @@ async fn handle_connection(address: std::net::SocketAddr, connection: WsConn, pe
             // registra na tabela o username deste usuário
             username = user.username;
             users.insert(username.clone());
+            
+            {
+                let mut peer_lock = peer_table.lock().unwrap();
+                let (_, verified) = peer_lock.get_mut(&address).unwrap();
+                *verified = true;
+            }
 
             // envia pro cliente uma mensagem sinalizando que o set de username foi OK
             send_to_self(peer_table.clone(), Message::text(
